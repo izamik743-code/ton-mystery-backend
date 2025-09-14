@@ -1,2 +1,2 @@
-# ton-mystery-backend
-Backend for TON Mystery Cases Mini App
+# ton-mini-app-backend
+Backend for TON Telegram Mini App
